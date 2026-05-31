@@ -19,10 +19,7 @@ from mcp.server.fastmcp import FastMCP
 
 GUZU_BASE_URL = os.getenv("GUZU_BASE_URL", "https://web-production-9c5d.up.railway.app")
 
-mcp = FastMCP(
-    "Guzu AI Visibility",
-    description="Query AI brand visibility, citations, trends and competitor data from Guzu."
-)
+mcp = FastMCP("Guzu AI Visibility")
 
 
 def _auth(api_key: str) -> dict:
