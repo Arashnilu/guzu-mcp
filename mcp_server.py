@@ -153,3 +153,103 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
+
+# ── NEW TOOL: analyze_brand ───────────────────────────────────────────────────
+@mcp.tool()
+def analyze_brand(website_url: str, geography: str = "Global", language: str = "en") -> dict:
+    """
+    Analyze a website and generate a brand profile for AI visibility tracking.
+
+    This is Step 1 of brand setup. It scrapes the website, identifies the brand's
+    offers, competitors, and generates tracking queries. Returns a profile payload
+    that you can review and then pass to save_brand_tracking to start tracking.
+
+    Args:
+        website_url: Full URL of the website (e.g. "https://example.com")
+        geography:   Target geography for tracking (e.g. "Global", "United States", "Singapore")
+        language:    Language code (e.g. "en", "fr", "de")
+    """
+    api_key = _api_key_var.get()
+    if not api_key:
+        raise ValueError("No API key found.")
+
+    r = httpx.post(
+        f"{GUZU_BASE_URL}/api/analyze-website",
+        json={"website_url": website_url, "target_geography": geography, "language": language},
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=60
+    )
+    if r.status_code == 401:
+        raise ValueError("Invalid or expired API key")
+    r.raise_for_status()
+    data = r.json()
+
+    analysis = data.get("analysis", {})
+
+    # Apply same limits as the internal plugin
+    profile = analysis.get("profile", {})
+    competitors = analysis.get("competitors", {}).get("competitors", [])[:5]
+    profile["competitors"] = competitors
+
+    tracking = analysis.get("tracking_questions", {})
+    tracking["brand_discovery"] = tracking.get("brand_discovery", [])[:2]
+    tracking["offers"] = tracking.get("offers", [])[:3]
+    for offer in tracking.get("offers", []):
+        offer["category_discovery"] = offer.get("category_discovery", [])[:2]
+
+    return {
+        "website_url":        website_url,
+        "source":             "mcp",
+        "profile":            profile,
+        "tracking_questions": tracking,
+        "note":               "Review the profile and tracking_questions, then call save_brand_tracking to start tracking."
+    }
+
+
+# ── NEW TOOL: save_brand_tracking ─────────────────────────────────────────────
+@mcp.tool()
+def save_brand_tracking(
+    website_url: str,
+    profile: dict,
+    tracking_questions: dict
+) -> dict:
+    """
+    Save a brand for AI visibility tracking. This is Step 2 of brand setup.
+
+    Pass the profile and tracking_questions returned by analyze_brand
+    (optionally edited). Returns a brand_id you can use with all other tools.
+
+    Args:
+        website_url:         The website URL being tracked
+        profile:             Brand profile from analyze_brand
+        tracking_questions:  Tracking queries from analyze_brand
+    """
+    api_key = _api_key_var.get()
+    if not api_key:
+        raise ValueError("No API key found.")
+
+    payload = {
+        "website_url":        website_url,
+        "source":             "mcp",
+        "profile":            profile,
+        "tracking_questions": tracking_questions,
+    }
+
+    r = httpx.post(
+        f"{GUZU_BASE_URL}/api/save-brand-setup",
+        json=payload,
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=30
+    )
+    if r.status_code == 401:
+        raise ValueError("Invalid or expired API key")
+    r.raise_for_status()
+    data = r.json()
+
+    brand_id = data.get("brand_id")
+    return {
+        "brand_id":   brand_id,
+        "website_url": website_url,
+        "message":    f"Brand saved successfully. Use brand_id={brand_id} with get_visibility_score and other tools.",
+    }
