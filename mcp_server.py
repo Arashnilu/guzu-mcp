@@ -102,3 +102,5 @@ def ask_guzu(api_key: str, brand_id: int, question: str, days: int = 7) -> dict:
         },
         "note": "Use the data above to answer the question with specific numbers and actionable insights."
     }
+if __name__ == "__main__":
+    mcp.run(transport="sse")
