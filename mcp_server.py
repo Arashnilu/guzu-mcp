@@ -1,19 +1,4 @@
-"""
-mcp_server.py — Guzu AI Visibility MCP Server
-Deploy as a separate Railway service.
-
-Tools exposed:
-  - get_visibility_score
-  - get_citation_trends
-  - get_query_results
-  - compare_competitors
-  - ask_guzu
-
-Each tool requires an api_key (gzu_xxx) generated from the Guzu dashboard.
-"""
-
 import os
-import json
 import httpx
 from mcp.server.fastmcp import FastMCP
 
@@ -27,7 +12,6 @@ def _auth(api_key: str) -> dict:
 
 
 def _get_cross_source(api_key: str, brand_id: int, days: int = 7) -> dict:
-    """Shared helper — fetches cross-source-data and returns the full payload."""
     r = httpx.get(
         f"{GUZU_BASE_URL}/api/overview/cross-source-data",
         params={"brand_id": brand_id, "days": days},
@@ -42,62 +26,26 @@ def _get_cross_source(api_key: str, brand_id: int, days: int = 7) -> dict:
     return r.json()
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TOOL 1 — get_visibility_score  (1 credit)
-# ─────────────────────────────────────────────────────────────────────────────
 @mcp.tool()
 def get_visibility_score(api_key: str, brand_id: int, days: int = 7) -> dict:
-    """
-    Get the AI Visibility Index and summary stats for a brand.
-
-    Returns the overall AI Visibility Index (0-100), total citations,
-    total mentions, and per-platform breakdown for the given period.
-
-    Args:
-        api_key:  Your Guzu API key (gzu_...)
-        brand_id: The brand ID from your Guzu account
-        days:     Lookback window in days (default 7)
-    """
+    """Get the AI Visibility Index and summary stats for a brand."""
     data = _get_cross_source(api_key, brand_id, days)
     stats = data.get("summary_stats", {})
-    platforms = data.get("platform_comparison", [])
-
     return {
-        "brand_id":           brand_id,
-        "days":               days,
+        "brand_id":            brand_id,
+        "days":                days,
         "ai_visibility_index": data.get("ai_visibility_index", 0),
-        "total_citations":    data.get("total_citations", 0),
-        "total_mentions":     data.get("total_mentions", 0),
-        "total_visibility":   data.get("total_visibility", 0),
-        "avg_citation_ratio": stats.get("avg_ratio", 0),
-        "market_position":    stats.get("market_position"),
-        "platforms":          [
-            {
-                "source":    p.get("source"),
-                "citations": p.get("citations", 0),
-                "mentions":  p.get("mentions", 0),
-            }
-            for p in platforms
-        ]
+        "total_citations":     data.get("total_citations", 0),
+        "total_mentions":      data.get("total_mentions", 0),
+        "total_visibility":    data.get("total_visibility", 0),
+        "market_position":     stats.get("market_position"),
+        "platforms":           data.get("platform_comparison", [])
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TOOL 2 — get_citation_trends  (1 credit)
-# ─────────────────────────────────────────────────────────────────────────────
 @mcp.tool()
 def get_citation_trends(api_key: str, brand_id: int, days: int = 7) -> dict:
-    """
-    Get day-by-day citation and mention trends for a brand.
-
-    Returns a time-series of citations and mentions per AI platform
-    so you can see how visibility is changing over time.
-
-    Args:
-        api_key:  Your Guzu API key (gzu_...)
-        brand_id: The brand ID from your Guzu account
-        days:     Lookback window in days (default 7)
-    """
+    """Get day-by-day citation and mention trends for a brand."""
     data = _get_cross_source(api_key, brand_id, days)
     return {
         "brand_id":   brand_id,
@@ -106,47 +54,21 @@ def get_citation_trends(api_key: str, brand_id: int, days: int = 7) -> dict:
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TOOL 3 — get_query_results  (1 credit)
-# ─────────────────────────────────────────────────────────────────────────────
 @mcp.tool()
 def get_query_results(api_key: str, brand_id: int, days: int = 7) -> dict:
-    """
-    Get per-query brand mention results across AI platforms.
-
-    Shows which tracked queries mention the brand, across ChatGPT,
-    Claude, Gemini, Perplexity and other enabled AI sources.
-
-    Args:
-        api_key:  Your Guzu API key (gzu_...)
-        brand_id: The brand ID from your Guzu account
-        days:     Lookback window in days (default 7)
-    """
+    """Get per-query brand mention results across AI platforms."""
     data = _get_cross_source(api_key, brand_id, days)
     return {
-        "brand_id":              brand_id,
-        "days":                  days,
+        "brand_id":               brand_id,
+        "days":                   days,
         "cross_platform_queries": data.get("cross_platform_queries", []),
-        "category_performance":  data.get("category_performance", []),
+        "category_performance":   data.get("category_performance", []),
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TOOL 4 — compare_competitors  (3 credits)
-# ─────────────────────────────────────────────────────────────────────────────
 @mcp.tool()
 def compare_competitors(api_key: str, brand_id: int, days: int = 7) -> dict:
-    """
-    Compare the brand's AI visibility against its competitors.
-
-    Returns competitor rankings, market position, and radar metrics
-    showing how the brand stacks up across citation and mention dimensions.
-
-    Args:
-        api_key:  Your Guzu API key (gzu_...)
-        brand_id: The brand ID from your Guzu account
-        days:     Lookback window in days (default 7)
-    """
+    """Compare the brand's AI visibility against its competitors."""
     data = _get_cross_source(api_key, brand_id, days)
     return {
         "brand_id":             brand_id,
@@ -157,85 +79,26 @@ def compare_competitors(api_key: str, brand_id: int, days: int = 7) -> dict:
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# TOOL 5 — ask_guzu  (10 credits)
-# ─────────────────────────────────────────────────────────────────────────────
 @mcp.tool()
 def ask_guzu(api_key: str, brand_id: int, question: str, days: int = 7) -> dict:
-    """
-    Ask a natural language question about a brand's AI visibility.
-
-    Fetches full visibility data and returns a structured answer
-    to questions like: "Why is my visibility dropping?" or
-    "Which AI platform should I focus on?" or
-    "How do I compare to my top competitor?"
-
-    Args:
-        api_key:  Your Guzu API key (gzu_...)
-        brand_id: The brand ID from your Guzu account
-        question: Your question in plain English
-        days:     Lookback window in days (default 7)
-    """
+    """Ask a natural language question about a brand's AI visibility."""
     data = _get_cross_source(api_key, brand_id, days)
-
-    # Build a compact context summary for the AI to reason over
     stats   = data.get("summary_stats", {})
     comp    = data.get("competitor_data", {})
     trends  = data.get("trend_data", [])
     queries = data.get("cross_platform_queries", [])
-
-    context = {
-        "question":            question,
-        "brand_id":            brand_id,
-        "days":                days,
-        "ai_visibility_index": data.get("ai_visibility_index"),
-        "total_citations":     data.get("total_citations"),
-        "total_mentions":      data.get("total_mentions"),
-        "market_position":     stats.get("market_position"),
-        "avg_ratio":           stats.get("avg_ratio"),
-        "platforms":           data.get("platform_comparison", []),
-        "trend_data":          trends[-7:] if trends else [],
-        "top_queries":         queries[:10] if queries else [],
-        "competitor_ranking":  comp.get("overall_ranking", [])[:5],
-        "category_performance": data.get("category_performance", []),
-    }
-
     return {
         "brand_id": brand_id,
         "question": question,
-        "data":     context,
-        "note":     "Use the data above to answer the question with specific numbers and actionable insights."
+        "data": {
+            "ai_visibility_index": data.get("ai_visibility_index"),
+            "total_citations":     data.get("total_citations"),
+            "total_mentions":      data.get("total_mentions"),
+            "market_position":     stats.get("market_position"),
+            "platforms":           data.get("platform_comparison", []),
+            "trend_data":          trends[-7:] if trends else [],
+            "top_queries":         queries[:10] if queries else [],
+            "competitor_ranking":  comp.get("overall_ranking", [])[:5],
+        },
+        "note": "Use the data above to answer the question with specific numbers and actionable insights."
     }
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Run
-# ─────────────────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    import uvicorn
-    from mcp.server.sse import SseServerTransport
-    from starlette.applications import Starlette
-    from starlette.routing import Route, Mount
-    from starlette.requests import Request
-
-    sse = SseServerTransport("/messages")
-
-    async def handle_sse(request: Request):
-        async with sse.connect_sse(
-            request.scope, request.receive, request.state._state
-        ) as streams:
-            await mcp._mcp_server.run(
-                streams[0], streams[1],
-                mcp._mcp_server.create_initialization_options()
-            )
-
-    async def handle_messages(scope, receive, send):
-        await sse.handle_post_message(scope, receive, send)
-
-    app = Starlette(routes=[
-        Route("/sse", endpoint=handle_sse),
-        Route("/messages", endpoint=handle_messages, methods=["POST"]),
-    ])
-
-    port = int(os.getenv("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
