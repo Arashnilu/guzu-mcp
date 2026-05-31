@@ -280,11 +280,9 @@ def save_brand_tracking(
             f"Tell the user: 'Brand saved! brand_id={brand_id}. "
             "Guzu is now running AI queries across your subscribed platforms. "
             "This takes about 10-12 minutes. "
-            f"I will check back automatically.' "
-            f"Then wait 12 minutes and call check_brand_ready(brand_id={brand_id}). "
-            "If ready, call get_visibility_score, get_citation_trends, and compare_competitors "
-            "and render a full visual report as a React artifact. "
-            "If not ready yet, tell the user which platforms are still processing and check again in 3 minutes."
+            "Check the current time and tell the user approximately when it will be ready (current time + 12 minutes). "
+            "In the meantime you can check progress anytime by running: "
+            f"check_brand_ready(brand_id={brand_id})'"
         )
     }
 
@@ -294,17 +292,14 @@ def save_brand_tracking(
 def check_brand_ready(brand_id: int) -> dict:
     """
     Check if a brand has finished data collection across all subscribed AI platforms.
-
-    Use this after save_brand_tracking to know when data is ready to query.
-    The brand is ready when all subscribed platforms (ChatGPT, Gemini, Perplexity etc.)
-    have completed their analysis for today.
-
-    If not ready yet, wait a few minutes and call this again.
-    If ready, call get_visibility_score, get_citation_trends, and compare_competitors
-    then render a React artifact showing the full visibility report.
-
+    Show the user exactly which platforms are done and which are still processing.
+    Do NOT estimate how long remaining platforms will take — you don't know.
+    Just tell the user which platforms are pending and ask them to check again later.
+    If all platforms are ready, call get_visibility_score, get_citation_trends,
+    and compare_competitors then render a React artifact showing the full visibility report.
     Args:
         brand_id: The brand ID returned by save_brand_tracking
+
     """
     api_key = _api_key_var.get()
     if not api_key:
