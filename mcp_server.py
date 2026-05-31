@@ -104,7 +104,6 @@ def ask_guzu(api_key: str, brand_id: int, question: str, days: int = 7) -> dict:
     }
 
 if __name__ == "__main__":
-    import uvicorn
-    app = mcp.sse_app()
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port, proxy_headers=True, forwarded_allow_ips="*")
+    os.environ["UVICORN_HOST"] = "0.0.0.0"
+    os.environ["UVICORN_PORT"] = os.environ.get("PORT", "8080")
+    mcp.run(transport="sse")
