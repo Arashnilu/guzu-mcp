@@ -18,7 +18,7 @@ mcp = FastMCP(
 app = mcp.sse_app()
 
 # ── Middleware to extract API key from headers ────────────────────────────────
-from starlette.middleware.base import BaseHTTPMiddleware
+
 from starlette.responses import JSONResponse
 
 class ApiKeyMiddleware:
