@@ -5,6 +5,7 @@ from mcp.server.fastmcp import FastMCP
 GUZU_BASE_URL = os.getenv("GUZU_BASE_URL", "https://web-production-9c5d.up.railway.app")
 
 mcp = FastMCP("Guzu AI Visibility")
+app = mcp.sse_app()
 
 
 def _auth(api_key: str) -> dict:
