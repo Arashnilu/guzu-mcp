@@ -21,29 +21,38 @@ app = mcp.sse_app()
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-class ApiKeyMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        # Extract key from Authorization: Bearer gzu_... or X-Guzu-Api-Key header
-        api_key = ""
-        auth = request.headers.get("authorization", "")
-        if auth.lower().startswith("bearer gzu_"):
-            api_key = auth[7:]
-        elif request.headers.get("x-guzu-api-key", "").startswith("gzu_"):
-            api_key = request.headers.get("x-guzu-api-key")
+class ApiKeyMiddleware:
+    def __init__(self, app):
+        self.app = app
 
-        # For SSE endpoint, key is required
-        if request.url.path == "/sse" and not api_key:
-            return JSONResponse(
-                {"error": "API key required. Pass X-Guzu-Api-Key header."},
-                status_code=401
-            )
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            headers = dict(scope.get("headers", []))
+            auth = headers.get(b"authorization", b"").decode()
+            custom = headers.get(b"x-guzu-api-key", b"").decode()
 
-        token = _api_key_var.set(api_key)
-        try:
-            response = await call_next(request)
-        finally:
-            _api_key_var.reset(token)
-        return response
+            api_key = ""
+            if auth.lower().startswith("bearer gzu_"):
+                api_key = auth[7:]
+            elif custom.startswith("gzu_"):
+                api_key = custom
+
+            path = scope.get("path", "")
+            if path == "/sse" and not api_key:
+                response = JSONResponse(
+                    {"error": "API key required. Pass X-Guzu-Api-Key header."},
+                    status_code=401
+                )
+                await response(scope, receive, send)
+                return
+
+            token = _api_key_var.set(api_key)
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                _api_key_var.reset(token)
+        else:
+            await self.app(scope, receive, send)
 
 app.add_middleware(ApiKeyMiddleware)
 
