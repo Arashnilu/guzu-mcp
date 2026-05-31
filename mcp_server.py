@@ -213,4 +213,4 @@ def ask_guzu(api_key: str, brand_id: int, question: str, days: int = 7) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     port = int(os.getenv("MCP_PORT", 8001))
-    mcp.run(transport="sse")
+    mcp.run(transport="sse", host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", 8000)))
