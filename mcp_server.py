@@ -216,17 +216,26 @@ if __name__ == "__main__":
     from mcp.server.sse import SseServerTransport
     from starlette.applications import Starlette
     from starlette.routing import Route, Mount
+    from starlette.requests import Request
 
     sse = SseServerTransport("/messages")
 
-    async def handle_sse(request):
-        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
-            await mcp._mcp_server.run(streams[0], streams[1], mcp._mcp_server.create_initialization_options())
+    async def handle_sse(request: Request):
+        async with sse.connect_sse(
+            request.scope, request.receive, request.state._state
+        ) as streams:
+            await mcp._mcp_server.run(
+                streams[0], streams[1],
+                mcp._mcp_server.create_initialization_options()
+            )
+
+    async def handle_messages(scope, receive, send):
+        await sse.handle_post_message(scope, receive, send)
 
     app = Starlette(routes=[
         Route("/sse", endpoint=handle_sse),
-        Mount("/messages", app=sse.handle_post_message),
+        Route("/messages", endpoint=handle_messages, methods=["POST"]),
     ])
 
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8080))
     uvicorn.run(app, host="0.0.0.0", port=port)
