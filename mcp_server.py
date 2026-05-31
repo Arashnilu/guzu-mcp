@@ -212,5 +212,21 @@ def ask_guzu(api_key: str, brand_id: int, question: str, days: int = 7) -> dict:
 # Run
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    port = int(os.getenv("MCP_PORT", 8001))
-    mcp.run(transport="sse", host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", 8000)))
+    import uvicorn
+    from mcp.server.sse import SseServerTransport
+    from starlette.applications import Starlette
+    from starlette.routing import Route, Mount
+
+    sse = SseServerTransport("/messages")
+
+    async def handle_sse(request):
+        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+            await mcp._mcp_server.run(streams[0], streams[1], mcp._mcp_server.create_initialization_options())
+
+    app = Starlette(routes=[
+        Route("/sse", endpoint=handle_sse),
+        Mount("/messages", app=sse.handle_post_message),
+    ])
+
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
