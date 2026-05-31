@@ -161,9 +161,26 @@ def analyze_brand(website_url: str, geography: str = "Global", language: str = "
     """
     Analyze a website and generate a brand profile for AI visibility tracking.
 
-    This is Step 1 of brand setup. It scrapes the website, identifies the brand's
-    offers, competitors, and generates tracking queries. Returns a profile payload
-    that you can review and then pass to save_brand_tracking to start tracking.
+    IMPORTANT — after calling this tool, you MUST:
+
+    1. Display ALL of the following sections clearly to the user:
+       - Brand profile (name, type, value propositions)
+       - Priority offers (list each offer name)
+       - Competitors (name, domain, competes_with)
+       - Tracking prompts broken down as:
+           * Brand discovery queries
+           * Branded verification queries
+           * Per-offer: category discovery queries
+           * Per-offer: brand offer review queries
+
+    2. Ask the user: "Would you like to save these as-is, or review and edit
+       the offers, competitors, and prompts first?"
+
+    3. If they want to edit — walk them through offers first, then competitors,
+       then prompts. Apply their changes to the returned data.
+
+    4. Once confirmed — call save_brand_tracking with the final
+       (possibly edited) profile and tracking_questions.
 
     Args:
         website_url: Full URL of the website (e.g. "https://example.com")
@@ -193,17 +210,24 @@ def analyze_brand(website_url: str, geography: str = "Global", language: str = "
     profile["competitors"] = competitors
 
     tracking = analysis.get("tracking_questions", {})
-    tracking["brand_discovery"] = tracking.get("brand_discovery", [])[:2]
-    tracking["offers"] = tracking.get("offers", [])[:3]
+    tracking["brand_discovery"]    = tracking.get("brand_discovery", [])[:2]
+    tracking["branded_verification"] = tracking.get("branded_verification", [])[:3]
+    tracking["offers"]             = tracking.get("offers", [])[:3]
     for offer in tracking.get("offers", []):
-        offer["category_discovery"] = offer.get("category_discovery", [])[:2]
+        offer["category_discovery"]  = offer.get("category_discovery", [])[:2]
+        offer["brand_offer_review"]  = offer.get("brand_offer_review", [])
 
     return {
         "website_url":        website_url,
         "source":             "mcp",
         "profile":            profile,
         "tracking_questions": tracking,
-        "note":               "Review the profile and tracking_questions, then call save_brand_tracking to start tracking."
+        "INSTRUCTIONS":       (
+            "Display ALL sections above to the user (profile, offers, competitors, AND all prompts). "
+            "Then ask: 'Save as-is or review and edit?' "
+            "If edit: walk through offers → competitors → prompts. "
+            "Then call save_brand_tracking with the final data."
+        )
     }
 
 
@@ -249,7 +273,49 @@ def save_brand_tracking(
 
     brand_id = data.get("brand_id")
     return {
-        "brand_id":   brand_id,
+        "brand_id":    brand_id,
         "website_url": website_url,
-        "message":    f"Brand saved successfully. Use brand_id={brand_id} with get_visibility_score and other tools.",
+        "message":     f"Brand saved successfully. brand_id={brand_id}.",
+        "INSTRUCTIONS": (
+            f"Tell the user: 'Brand saved! brand_id={brand_id}. "
+            "Guzu is now running AI queries across your subscribed platforms. "
+            "This takes about 10-12 minutes. "
+            f"I will check back automatically.' "
+            f"Then wait 12 minutes and call check_brand_ready(brand_id={brand_id}). "
+            "If ready, call get_visibility_score, get_citation_trends, and compare_competitors "
+            "and render a full visual report as a React artifact. "
+            "If not ready yet, tell the user which platforms are still processing and check again in 3 minutes."
+        )
     }
+
+
+# ── NEW TOOL: check_brand_ready ───────────────────────────────────────────────
+@mcp.tool()
+def check_brand_ready(brand_id: int) -> dict:
+    """
+    Check if a brand has finished data collection across all subscribed AI platforms.
+
+    Use this after save_brand_tracking to know when data is ready to query.
+    The brand is ready when all subscribed platforms (ChatGPT, Gemini, Perplexity etc.)
+    have completed their analysis for today.
+
+    If not ready yet, wait a few minutes and call this again.
+    If ready, call get_visibility_score, get_citation_trends, and compare_competitors
+    then render a React artifact showing the full visibility report.
+
+    Args:
+        brand_id: The brand ID returned by save_brand_tracking
+    """
+    api_key = _api_key_var.get()
+    if not api_key:
+        raise ValueError("No API key found.")
+
+    r = httpx.get(
+        f"{GUZU_BASE_URL}/api/brand/status/{brand_id}",
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=15
+    )
+    if r.status_code == 401:
+        raise ValueError("Invalid or expired API key")
+    r.raise_for_status()
+    return r.json()
