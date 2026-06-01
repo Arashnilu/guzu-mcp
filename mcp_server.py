@@ -219,12 +219,12 @@ def analyze_brand(website_url: str, geography: str = "Global", language: str = "
     profile["competitors"] = competitors
 
     tracking = analysis.get("tracking_questions", {})
-    tracking["brand_discovery"]    = tracking.get("brand_discovery", [])[:2]
-    tracking["branded_verification"] = tracking.get("branded_verification", [])[:3]
-    tracking["offers"]             = tracking.get("offers", [])[:3]
+    tracking["brand_discovery"]      = tracking.get("brand_discovery", [])[:6]
+    tracking["branded_verification"] = tracking.get("branded_verification", [])[:6]
+    tracking["offers"]               = tracking.get("offers", [])[:4]
     for offer in tracking.get("offers", []):
-        offer["category_discovery"]  = offer.get("category_discovery", [])[:2]
-        offer["brand_offer_review"]  = offer.get("brand_offer_review", [])
+        offer["category_discovery"]  = offer.get("category_discovery", [])[:6]
+        offer["brand_offer_review"]  = offer.get("brand_offer_review", [])[:6]
 
     return {
         "website_url":        website_url,
@@ -288,10 +288,8 @@ def save_brand_tracking(
         "INSTRUCTIONS": (
             f"Tell the user: 'Brand saved! brand_id={brand_id}. "
             "Guzu is now running AI queries across your subscribed platforms. "
-            "This takes about 10-12 minutes. "
-            "Check the current time and tell the user approximately when it will be ready (current time + 12 minutes). "
-            "In the meantime you can check progress anytime by running: "
-            f"check_brand_ready(brand_id={brand_id})'"
+            "This takes 10-12 minutes. "
+            f"You can check progress anytime by running: check_brand_ready(brand_id={brand_id})'"
         )
     }
 
