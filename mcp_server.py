@@ -157,13 +157,6 @@ def ask_guzu(brand_id: int, question: str, days: int = 7) -> dict:
     }
 
 
-# ── Run ───────────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
-
-
 # ── NEW TOOL: analyze_brand ───────────────────────────────────────────────────
 @mcp.tool()
 def analyze_brand(website_url: str, geography: str = "Global", language: str = "en") -> dict:
@@ -321,3 +314,69 @@ def check_brand_ready(brand_id: int) -> dict:
         raise ValueError("Invalid or expired API key")
     r.raise_for_status()
     return r.json()
+
+
+# ── NEW TOOL: get_citation_landscape ──────────────────────────────────────────
+@mcp.tool()
+def get_citation_landscape(brand_id: int, source: str, days: int = 7) -> dict:
+    """
+    Get the Citation & Domain Landscape for a brand on ONE specific AI platform.
+
+    Shows which domains that AI platform cites when answering queries about the
+    brand's space — including "opportunity" domains where competitors get cited
+    but the brand does not (citation gaps). Use this to find where the brand
+    should be earning citations but isn't.
+
+    Args:
+        brand_id: The brand ID from your Guzu account
+        source:   Which AI platform to inspect. One of:
+                  "chatgpt", "perplexity", "gemini", "ai_overview", "grok", "claude"
+                  (one source per call — there is no aggregate option)
+        days:     Lookback window in days (default 7)
+    """
+    api_key = _api_key_var.get()
+    if not api_key:
+        raise ValueError("No API key found. Connect with X-Guzu-Api-Key header.")
+
+    valid_sources = {"chatgpt", "perplexity", "gemini", "ai_overview", "grok", "claude"}
+    source = source.strip().lower()
+    if source not in valid_sources:
+        raise ValueError(
+            f"Invalid source '{source}'. Must be one of: {', '.join(sorted(valid_sources))}"
+        )
+
+    r = httpx.get(
+        f"{GUZU_BASE_URL}/api/{source}/citation-landscape",
+        params={"brand_id": brand_id, "days": days},
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=30
+    )
+    if r.status_code == 401:
+        raise ValueError("Invalid or expired API key")
+    if r.status_code == 403:
+        raise ValueError("Brand not found or does not belong to this account")
+    r.raise_for_status()
+
+    payload = r.json()
+    data = payload.get("data", {})
+
+    return {
+        "brand_id":             data.get("brand_id", brand_id),
+        "source":               data.get("source", source),
+        "days":                 days,
+        "time_period":          data.get("time_period"),
+        "brand_name":           data.get("brand_name"),
+        "brand_domains":        data.get("brand_domains", []),
+        "total_queries":        data.get("total_queries", 0),
+        "summary":              data.get("summary", {}),
+        "tracked_competitors":  data.get("tracked_competitors", []),
+        "domain_opportunities": data.get("domain_opportunities", []),
+        "queries":              data.get("queries", []),
+    }
+
+
+# ── Run ───────────────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
