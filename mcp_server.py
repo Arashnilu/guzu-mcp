@@ -270,6 +270,20 @@ def save_brand_tracking(
     )
     if r.status_code == 401:
         raise ValueError("Invalid or expired API key")
+    if r.status_code == 429:
+        body = r.json()
+        raise ValueError(
+            f"OUT OF CREDITS — not a rate limit, do NOT retry. "
+            f"You need {body.get('credits_needed', 50)} credits but only have "
+            f"{body.get('credits_available', 0)}. "
+            f"Tell the user to top up at guzu.ai/mcp/dashboard. Do not retry until they add credits."
+        )
+    if r.status_code == 403:
+        body = r.json()
+        raise ValueError(
+            f"Cannot save brand: {body.get('error', 'limit reached or not allowed')}. "
+            f"Do NOT retry — this is a permanent rejection until the user resolves it."
+        )
     r.raise_for_status()
     data = r.json()
 
