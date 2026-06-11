@@ -201,6 +201,14 @@ def analyze_brand(website_url: str, geography: str = "Global", language: str = "
     )
     if r.status_code == 401:
         raise ValueError("Invalid or expired API key")
+    if r.status_code == 429:
+        body = r.json()
+        raise ValueError(
+            f"OUT OF CREDITS — not a rate limit, do NOT retry. "
+            f"Analyzing a brand costs {body.get('credits_needed', 25)} credits but the account "
+            f"only has {body.get('credits_available', 0)}. "
+            f"Tell the user to top up at guzu.ai/mcp/dashboard. Do not retry until they add credits."
+        )
     r.raise_for_status()
     data = r.json()
 
@@ -272,11 +280,24 @@ def save_brand_tracking(
         raise ValueError("Invalid or expired API key")
     if r.status_code == 429:
         body = r.json()
+        prompts = body.get('prompts')
+        affordable = body.get('affordable_prompts')
+        detail = ""
+        if prompts is not None and affordable is not None:
+            to_remove = max(0, prompts - affordable)
+            detail = (
+                f"This brand has {prompts} prompts ({body.get('credits_needed', 0)} credits). "
+                f"The account has {body.get('credits_available', 0)} credits — enough for {affordable} prompts. "
+                f"To save now, remove {to_remove} prompt(s), or top up at guzu.ai/mcp/dashboard. "
+            )
+        else:
+            detail = (
+                f"You need {body.get('credits_needed', 0)} credits but only have "
+                f"{body.get('credits_available', 0)}. Top up at guzu.ai/mcp/dashboard. "
+            )
         raise ValueError(
-            f"OUT OF CREDITS — not a rate limit, do NOT retry. "
-            f"You need {body.get('credits_needed', 50)} credits but only have "
-            f"{body.get('credits_available', 0)}. "
-            f"Tell the user to top up at guzu.ai/mcp/dashboard. Do not retry until they add credits."
+            "OUT OF CREDITS — not a rate limit, do NOT retry. " + detail +
+            "Do not retry until the user reduces prompts or adds credits."
         )
     if r.status_code == 403:
         body = r.json()
