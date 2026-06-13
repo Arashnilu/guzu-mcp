@@ -57,7 +57,7 @@ class ApiKeyMiddleware:
 app.add_middleware(ApiKeyMiddleware)
 
 
-# ── Shared helper ─────────────────────────────────────────────────────────────
+# ── Shared helpers ────────────────────────────────────────────────────────────
 def _get_cross_source(brand_id: int, days: int = 7) -> dict:
     api_key = _api_key_var.get()
     if not api_key:
@@ -77,11 +77,52 @@ def _get_cross_source(brand_id: int, days: int = 7) -> dict:
     return r.json()
 
 
-# ── Tools (no api_key param needed) ──────────────────────────────────────────
+# Which AI platforms expose full gap/mention data (vs citation-frequency only)
+_RICH_GAP_SOURCES = {"chatgpt", "ai_overview"}
+_ALL_SOURCES = ["chatgpt", "perplexity", "gemini", "ai_overview", "grok", "claude"]
+
+
+def _fetch_landscape(brand_id: int, source: str, days: int) -> dict:
+    """Fetch the citation-landscape for a single source. Returns {} on 404/no-data."""
+    api_key = _api_key_var.get()
+    if not api_key:
+        raise ValueError("No API key found. Connect with X-Guzu-Api-Key header.")
+    r = httpx.get(
+        f"{GUZU_BASE_URL}/api/{source}/citation-landscape",
+        params={"brand_id": brand_id, "days": days},
+        headers={"Authorization": f"Bearer {api_key}"},
+        timeout=30
+    )
+    if r.status_code == 401:
+        raise ValueError("Invalid or expired API key")
+    if r.status_code == 403:
+        raise ValueError("Brand not found or does not belong to this account")
+    if r.status_code == 404:
+        return {}
+    r.raise_for_status()
+    return r.json().get("data", {})
+
+
+# ── Tools ─────────────────────────────────────────────────────────────────────
 
 @mcp.tool()
 def get_visibility_score(brand_id: int, days: int = 7) -> dict:
-    """Get the AI Visibility Index and summary stats for a brand."""
+    """
+    Get a brand's AI Visibility Score — how visible the brand is across AI
+    platforms (ChatGPT, Perplexity, Gemini, AI Overview).
+
+    Returns the AI Visibility Index, total citations and mentions, the brand's
+    market position vs. competitors, and a per-platform breakdown showing which
+    AI platforms cite/mention the brand most. This single tool answers
+    "how visible am I?", "which platform am I strongest on?", and
+    "what's my market position?".
+
+    Requires a brand that has finished analyzing (see check_analyzing_progress).
+
+    Args:
+        brand_id: The brand ID from your Guzu account
+        days:     Lookback window in days (default 7)
+    """
     data = _get_cross_source(brand_id, days)
     stats = data.get("summary_stats", {})
     return {
@@ -92,36 +133,51 @@ def get_visibility_score(brand_id: int, days: int = 7) -> dict:
         "total_mentions":      data.get("total_mentions", 0),
         "total_visibility":    data.get("total_visibility", 0),
         "market_position":     stats.get("market_position"),
-        "platforms":           data.get("platform_comparison", [])
+        "platforms":           data.get("platform_comparison", []),
     }
 
 
 @mcp.tool()
-def get_citation_trends(brand_id: int, days: int = 7) -> dict:
-    """Get day-by-day citation and mention trends for a brand."""
-    data = _get_cross_source(brand_id, days)
-    return {
-        "brand_id":   brand_id,
-        "days":       days,
-        "trend_data": data.get("trend_data", []),
-    }
+def get_results_by_prompt(brand_id: int, days: int = 7) -> dict:
+    """
+    Get the brand's AI-visibility results broken down by individual prompt
+    (the tracked queries), plus performance grouped by category.
 
+    Use this to answer "which specific prompts/questions does my brand show up
+    on, and which ones is it missing from?" Each entry shows how the brand
+    performed for that prompt across the AI platforms.
 
-@mcp.tool()
-def get_query_results(brand_id: int, days: int = 7) -> dict:
-    """Get per-query brand mention results across AI platforms."""
+    Requires a brand that has finished analyzing (see check_analyzing_progress).
+
+    Args:
+        brand_id: The brand ID from your Guzu account
+        days:     Lookback window in days (default 7)
+    """
     data = _get_cross_source(brand_id, days)
     return {
         "brand_id":               brand_id,
         "days":                   days,
-        "cross_platform_queries": data.get("cross_platform_queries", []),
+        "results_by_prompt":      data.get("cross_platform_queries", []),
         "category_performance":   data.get("category_performance", []),
     }
 
 
 @mcp.tool()
 def compare_competitors(brand_id: int, days: int = 7) -> dict:
-    """Compare the brand's AI visibility against its competitors."""
+    """
+    Compare the brand's AI visibility against its tracked competitors.
+
+    Returns the competitor ranking (where the brand sits vs. rivals), overall
+    market position, radar metrics, and platform-specific competitor rankings
+    (who leads on each AI platform). Use this to answer "who beats me in AI
+    answers?" and "where do I rank against competitors?".
+
+    Requires a brand that has finished analyzing (see check_analyzing_progress).
+
+    Args:
+        brand_id: The brand ID from your Guzu account
+        days:     Lookback window in days (default 7)
+    """
     data = _get_cross_source(brand_id, days)
     return {
         "brand_id":             brand_id,
@@ -134,11 +190,24 @@ def compare_competitors(brand_id: int, days: int = 7) -> dict:
 
 @mcp.tool()
 def ask_guzu(brand_id: int, question: str, days: int = 7) -> dict:
-    """Ask a natural language question about a brand's AI visibility."""
+    """
+    Ask a natural-language question about a brand's AI visibility. Gathers the
+    most relevant visibility data for the brand and returns it so you can answer
+    the question with specific numbers and actionable insight.
+
+    Use this for open-ended questions like "why is my visibility low?" or
+    "what should I focus on to improve?".
+
+    Requires a brand that has finished analyzing (see check_analyzing_progress).
+
+    Args:
+        brand_id: The brand ID from your Guzu account
+        question: The user's natural-language question
+        days:     Lookback window in days (default 7)
+    """
     data = _get_cross_source(brand_id, days)
     stats   = data.get("summary_stats", {})
     comp    = data.get("competitor_data", {})
-    trends  = data.get("trend_data", [])
     queries = data.get("cross_platform_queries", [])
     return {
         "brand_id": brand_id,
@@ -149,7 +218,6 @@ def ask_guzu(brand_id: int, question: str, days: int = 7) -> dict:
             "total_mentions":      data.get("total_mentions"),
             "market_position":     stats.get("market_position"),
             "platforms":           data.get("platform_comparison", []),
-            "trend_data":          trends[-7:] if trends else [],
             "top_queries":         queries[:10] if queries else [],
             "competitor_ranking":  comp.get("overall_ranking", [])[:5],
         },
@@ -157,36 +225,40 @@ def ask_guzu(brand_id: int, question: str, days: int = 7) -> dict:
     }
 
 
-# ── NEW TOOL: analyze_brand ───────────────────────────────────────────────────
+# ── Setup pipeline: prepare_brand → start_analyzing → check_analyzing_progress ──
+
 @mcp.tool()
-def analyze_brand(website_url: str, geography: str = "Global", language: str = "en") -> dict:
+def prepare_brand(website_url: str, geography: str = "Global", language: str = "en") -> dict:
     """
-    Analyze a website and generate a brand profile for AI visibility tracking.
+    STEP 1 of brand setup. Scan a website and build a draft AI-visibility
+    tracking profile for review. This does NOT start any analysis and does NOT
+    charge credits — it only fetches information about the website so the user
+    can review and edit it before committing.
+
+    It returns: the brand profile (name, type, value propositions), priority
+    offers, competitors, and a set of tracking prompts (the questions Guzu will
+    later ask the AI platforms about this brand).
 
     IMPORTANT — after calling this tool, you MUST:
-
-    1. Display ALL of the following sections clearly to the user:
+    1. Display ALL of these sections clearly to the user:
        - Brand profile (name, type, value propositions)
        - Priority offers (list each offer name)
        - Competitors (name, domain, competes_with)
-       - Tracking prompts broken down as:
+       - Tracking prompts, broken down as:
            * Brand discovery queries
            * Branded verification queries
            * Per-offer: category discovery queries
            * Per-offer: brand offer review queries
-
-    2. Ask the user: "Would you like to save these as-is, or review and edit
+    2. Ask: "Would you like to start analyzing these as-is, or review and edit
        the offers, competitors, and prompts first?"
-
-    3. If they want to edit — walk them through offers first, then competitors,
-       then prompts. Apply their changes to the returned data.
-
-    4. Once confirmed — call save_brand_tracking with the final
-       (possibly edited) profile and tracking_questions.
+    3. If they want to edit — walk them through offers, then competitors, then
+       prompts, applying their changes to the returned data.
+    4. Once confirmed — call start_analyzing with the final (possibly edited)
+       profile and tracking_questions.
 
     Args:
         website_url: Full URL of the website (e.g. "https://example.com")
-        geography:   Target geography for tracking (e.g. "Global", "United States", "Singapore")
+        geography:   Target geography (e.g. "Global", "United States", "Singapore")
         language:    Language code (e.g. "en", "fr", "de")
     """
     api_key = _api_key_var.get()
@@ -205,7 +277,7 @@ def analyze_brand(website_url: str, geography: str = "Global", language: str = "
         body = r.json()
         raise ValueError(
             f"OUT OF CREDITS — not a rate limit, do NOT retry. "
-            f"Analyzing a brand costs {body.get('credits_needed', 25)} credits but the account "
+            f"Preparing a brand costs {body.get('credits_needed', 25)} credits but the account "
             f"only has {body.get('credits_available', 0)}. "
             f"Tell the user to top up at guzu.ai/mcp/dashboard. Do not retry until they add credits."
         )
@@ -214,7 +286,6 @@ def analyze_brand(website_url: str, geography: str = "Global", language: str = "
 
     analysis = data.get("analysis", {})
 
-    # Apply same limits as the internal plugin
     profile = analysis.get("profile", {})
     competitors = analysis.get("competitors", {}).get("competitors", [])[:5]
     profile["competitors"] = competitors
@@ -234,30 +305,41 @@ def analyze_brand(website_url: str, geography: str = "Global", language: str = "
         "tracking_questions": tracking,
         "INSTRUCTIONS":       (
             "Display ALL sections above to the user (profile, offers, competitors, AND all prompts). "
-            "Then ask: 'Save as-is or review and edit?' "
-            "If edit: walk through offers → competitors → prompts. "
-            "Then call save_brand_tracking with the final data."
+            "Then ask: 'Start analyzing as-is, or review and edit first?' "
+            "If edit: walk through offers -> competitors -> prompts. "
+            "Then call start_analyzing with the final data."
         )
     }
 
 
-# ── NEW TOOL: save_brand_tracking ─────────────────────────────────────────────
 @mcp.tool()
-def save_brand_tracking(
+def start_analyzing(
     website_url: str,
     profile: dict,
     tracking_questions: dict
 ) -> dict:
     """
-    Save a brand for AI visibility tracking. This is Step 2 of brand setup.
+    STEP 2 of brand setup. Save the prepared brand and START ANALYZING it.
 
-    Pass the profile and tracking_questions returned by analyze_brand
-    (optionally edited). Returns a brand_id you can use with all other tools.
+    "Analyzing" means Guzu takes each tracking prompt and asks it to the AI
+    platforms your account covers (ChatGPT, Perplexity, Gemini, AI Overview),
+    then records whether the brand is cited or mentioned, which competitors are
+    cited, and which third-party domains the AI relies on. This is the step that
+    produces all the visibility data the other tools read.
+
+    You MUST have called prepare_brand first — pass the profile and
+    tracking_questions it returned (optionally edited by the user). This step
+    charges credits based on the number of prompts. It returns a brand_id used
+    by all the reporting tools.
+
+    After calling this, tell the user analysis is running (it takes ~10-12
+    minutes) and that they can check progress with
+    check_analyzing_progress(brand_id).
 
     Args:
         website_url:         The website URL being tracked
-        profile:             Brand profile from analyze_brand
-        tracking_questions:  Tracking queries from analyze_brand
+        profile:             Brand profile from prepare_brand
+        tracking_questions:  Tracking prompts from prepare_brand
     """
     api_key = _api_key_var.get()
     if not api_key:
@@ -282,13 +364,12 @@ def save_brand_tracking(
         body = r.json()
         prompts = body.get('prompts')
         affordable = body.get('affordable_prompts')
-        detail = ""
         if prompts is not None and affordable is not None:
             to_remove = max(0, prompts - affordable)
             detail = (
                 f"This brand has {prompts} prompts ({body.get('credits_needed', 0)} credits). "
                 f"The account has {body.get('credits_available', 0)} credits — enough for {affordable} prompts. "
-                f"To save now, remove {to_remove} prompt(s), or top up at guzu.ai/mcp/dashboard. "
+                f"To start now, remove {to_remove} prompt(s), or top up at guzu.ai/mcp/dashboard. "
             )
         else:
             detail = (
@@ -302,39 +383,47 @@ def save_brand_tracking(
     if r.status_code == 403:
         body = r.json()
         raise ValueError(
-            f"Cannot save brand: {body.get('error', 'limit reached or not allowed')}. "
+            f"Cannot start analyzing: {body.get('error', 'limit reached or not allowed')}. "
             f"Do NOT retry — this is a permanent rejection until the user resolves it."
         )
     r.raise_for_status()
     data = r.json()
 
     brand_id = data.get("brand_id")
-    return {
+    note = data.get("note")  # may carry a 105-prompt cap notice
+    result = {
         "brand_id":    brand_id,
         "website_url": website_url,
-        "message":     f"Brand saved successfully. brand_id={brand_id}.",
+        "prompts_saved": data.get("prompts_saved"),
+        "message":     f"Analysis started. brand_id={brand_id}.",
         "INSTRUCTIONS": (
-            f"Tell the user: 'Brand saved! brand_id={brand_id}. "
-            "Guzu is now running AI queries across your subscribed platforms. "
-            "This takes 10-12 minutes. "
-            f"You can check progress anytime by running: check_brand_ready(brand_id={brand_id})'"
+            f"Tell the user: 'Analysis started! brand_id={brand_id}. "
+            "Guzu is now running your prompts across the AI platforms your account covers. "
+            "This usually takes 10-12 minutes. "
+            f"Check progress anytime with check_analyzing_progress(brand_id={brand_id}).'"
         )
     }
+    if note:
+        result["cap_note"] = note
+    return result
 
 
-# ── NEW TOOL: check_brand_ready ───────────────────────────────────────────────
 @mcp.tool()
-def check_brand_ready(brand_id: int) -> dict:
+def check_analyzing_progress(brand_id: int) -> dict:
     """
-    Check if a brand has finished data collection across all subscribed AI platforms.
-    Show the user exactly which platforms are done and which are still processing.
-    Do NOT estimate how long remaining platforms will take — you don't know.
-    Just tell the user which platforms are pending and ask them to check again later.
-    If all platforms are ready, call get_visibility_score, get_citation_trends,
-    and compare_competitors then render a React artifact showing the full visibility report.
-    Args:
-        brand_id: The brand ID returned by save_brand_tracking
+    Check how far along the analysis is for a brand — which AI platforms have
+    finished collecting data and which are still processing.
 
+    Show the user exactly which platforms are done and which are pending. Do NOT
+    estimate how long the remaining platforms will take — you don't know. If
+    platforms are still pending, ask the user to check again shortly.
+
+    When everything is ready, you can call get_visibility_score,
+    compare_competitors, get_results_by_prompt, and gap_analysis to build the
+    full report.
+
+    Args:
+        brand_id: The brand ID returned by start_analyzing
     """
     api_key = _api_key_var.get()
     if not api_key:
@@ -351,62 +440,167 @@ def check_brand_ready(brand_id: int) -> dict:
     return r.json()
 
 
-# ── NEW TOOL: get_citation_landscape ──────────────────────────────────────────
-@mcp.tool()
-def get_citation_landscape(brand_id: int, source: str, days: int = 7) -> dict:
-    """
-    Get the Citation & Domain Landscape for a brand on ONE specific AI platform.
+# ── gap_analysis (the citation & domain gap tool) ──────────────────────────────
 
-    Shows which domains that AI platform cites when answering queries about the
-    brand's space — including "opportunity" domains where competitors get cited
-    but the brand does not (citation gaps). Use this to find where the brand
-    should be earning citations but isn't.
+def _shape_landscape(data: dict) -> dict:
+    """Trim one source's landscape payload into a compact, structured view."""
+    if not data:
+        return {}
+    source = data.get("source")
+    summary = data.get("summary", {}) or {}
+    q_total = summary.get("queries_total", 0) or 0
+    cited = summary.get("brand_cited", 0) or 0
+    cited_pct = round((cited / q_total) * 100) if q_total else 0
+
+    # Domain leaderboard — keep the most useful fields, opportunities first
+    domains = data.get("domain_opportunities", []) or []
+    leaderboard = [{
+        "domain":        d.get("domain"),
+        "content_type":  d.get("content_type"),
+        "cite_rate":     d.get("cite_rate"),
+        "queries_cited": d.get("queries_cited"),
+        "queries_seen":  d.get("queries_seen"),
+        "is_opportunity": d.get("is_opportunity"),
+        "mentions_you":   d.get("mentions_you"),
+        "mentions_rivals": d.get("mentions_rivals"),
+        "sample_url":    d.get("sample_url"),
+        "sample_title":  d.get("sample_title"),
+    } for d in domains]
+
+    return {
+        "source":               source,
+        "has_gap_data":         source in _RICH_GAP_SOURCES,
+        "summary": {
+            "queries_total":         q_total,
+            "brand_cited":           cited,
+            "brand_cited_pct":       cited_pct,
+            "brand_not_cited":       summary.get("brand_not_cited", 0),
+            "gap_pages":             summary.get("gap_pages", 0),
+            "content_type_breakdown": summary.get("content_type_breakdown", []),
+        },
+        "domain_leaderboard":   leaderboard,
+        # per-query is included only in single-source mode (see gap_analysis)
+        "queries":              data.get("queries", []),
+    }
+
+
+@mcp.tool()
+def gap_analysis(brand_id: int, source: str = "all", days: int = 7) -> dict:
+    """
+    Find where a brand is MISSING from AI answers — the citation & domain gap
+    analysis. This is the most actionable visibility tool.
+
+    For each AI platform it shows: how often the brand is cited vs not, the
+    overall content-type mix of what the AI cites (Blog, Listicle, Forum,
+    Other/directories, etc.), and a ranked leaderboard of the domains the AI
+    relies on — flagging "opportunity" domains that get cited but where the
+    brand is absent (and, on ChatGPT and AI Overview, which of those mention
+    rivals but not the brand).
+
+    PLATFORM COVERAGE:
+    - source="all" (default): analyzes every AI platform the account covers and
+      returns them keyed by platform. Best for a complete picture.
+    - source="chatgpt" | "perplexity" | "gemini" | "ai_overview" | "grok" |
+      "claude": just that one platform, WITH full per-query breakdown.
+    - Full gap/mention detail (mentions-you, mentions-rivals, gap pages) is only
+      available for ChatGPT and AI Overview (has_gap_data=true). Other platforms
+      return accurate citation frequency but not the you-vs-rival gap detail —
+      tell the user this if they ask about gaps on those platforms.
+
+    AFTER returning the data, proactively offer these follow-ups (you derive them
+    from the data already returned — do NOT call another tool):
+      1. ACTION PLAN — prioritized recommendations: which opportunity domains and
+         content types to target first (rank by cite_rate, whether rivals are
+         cited there, and gap status).
+      2. PER-PROMPT GAP BREAKDOWN — walk through each prompt (the `queries`
+         array, available in single-source mode): where the brand is cited, where
+         rivals are cited, and the specific gap pages for that prompt. If the user
+         wants this and you fetched source="all", re-run gap_analysis for the one
+         platform they care about to get the per-query detail.
+      3. OFF-PAGE STRATEGY vs CONTENT STRATEGY — split the opportunity domains by
+         content_type:
+           * CONTENT STRATEGY (work done ON the client's own site): opportunities
+             where the cited source is article/content the client could publish
+             themselves — content_type in {Blog, Listicle, News/Editorial, Video}.
+             The play: write that content on their own site to earn the citation.
+           * OFF-PAGE STRATEGY (work done on THIRD-PARTY sites): opportunities
+             where the cited source is a third-party listing/mention the client
+             can't self-publish — content_type in {Other, Forum, Social,
+             LinkedIn}. The play: get listed / mentioned / cited on those sources
+             (directories, profiles, outreach).
 
     Args:
         brand_id: The brand ID from your Guzu account
-        source:   Which AI platform to inspect. One of:
-                  "chatgpt", "perplexity", "gemini", "ai_overview", "grok", "claude"
-                  (one source per call — there is no aggregate option)
+        source:   "all" (default) or one of chatgpt, perplexity, gemini,
+                  ai_overview, grok, claude
         days:     Lookback window in days (default 7)
     """
-    api_key = _api_key_var.get()
-    if not api_key:
-        raise ValueError("No API key found. Connect with X-Guzu-Api-Key header.")
-
-    valid_sources = {"chatgpt", "perplexity", "gemini", "ai_overview", "grok", "claude"}
-    source = source.strip().lower()
-    if source not in valid_sources:
+    source = (source or "all").strip().lower()
+    valid = set(_ALL_SOURCES) | {"all"}
+    if source not in valid:
         raise ValueError(
-            f"Invalid source '{source}'. Must be one of: {', '.join(sorted(valid_sources))}"
+            f"Invalid source '{source}'. Use 'all' or one of: {', '.join(_ALL_SOURCES)}"
         )
 
-    r = httpx.get(
-        f"{GUZU_BASE_URL}/api/{source}/citation-landscape",
-        params={"brand_id": brand_id, "days": days},
-        headers={"Authorization": f"Bearer {api_key}"},
-        timeout=30
-    )
-    if r.status_code == 401:
-        raise ValueError("Invalid or expired API key")
-    if r.status_code == 403:
-        raise ValueError("Brand not found or does not belong to this account")
-    r.raise_for_status()
+    followups = {
+        "action_plan": "Prioritized recommendations from the opportunity domains and content-type mix.",
+        "per_prompt_gap_breakdown": "Gap detail for each individual prompt (single-source mode has full per-query data).",
+        "off_page_vs_content_strategy": "Split opportunities into content-strategy (publish on own site) vs off-page-strategy (get listed/mentioned on third-party sites).",
+    }
 
-    payload = r.json()
-    data = payload.get("data", {})
+    if source != "all":
+        data = _fetch_landscape(brand_id, source, days)
+        shaped = _shape_landscape(data)
+        if not shaped:
+            return {
+                "brand_id": brand_id,
+                "source": source,
+                "message": f"No analysis data for {source} yet. The brand may still be analyzing.",
+            }
+        shaped["brand_id"] = data.get("brand_id", brand_id)
+        shaped["brand_name"] = data.get("brand_name")
+        shaped["days"] = days
+        shaped["available_followups"] = followups
+        return shaped
+
+    # source == "all": fetch each subscribed platform; tolerate missing ones.
+    # We discover which platforms have data by trying them and skipping empties.
+    results = {}
+    for src in _ALL_SOURCES:
+        try:
+            data = _fetch_landscape(brand_id, src, days)
+        except ValueError:
+            raise  # auth/ownership errors should bubble up
+        except Exception:
+            continue
+        if not data or not data.get("queries"):
+            continue
+        shaped = _shape_landscape(data)
+        # In multi-platform mode, drop the heavy per-query array to keep the
+        # response compact; per-query detail is available via single-source mode.
+        shaped.pop("queries", None)
+        shaped["per_query_available_via"] = f"gap_analysis(brand_id={brand_id}, source='{src}')"
+        results[src] = shaped
+
+    if not results:
+        return {
+            "brand_id": brand_id,
+            "source": "all",
+            "message": "No analysis data available yet on any platform. The brand may still be analyzing — check_analyzing_progress(brand_id).",
+        }
 
     return {
-        "brand_id":             data.get("brand_id", brand_id),
-        "source":               data.get("source", source),
-        "days":                 days,
-        "time_period":          data.get("time_period"),
-        "brand_name":           data.get("brand_name"),
-        "brand_domains":        data.get("brand_domains", []),
-        "total_queries":        data.get("total_queries", 0),
-        "summary":              data.get("summary", {}),
-        "tracked_competitors":  data.get("tracked_competitors", []),
-        "domain_opportunities": data.get("domain_opportunities", []),
-        "queries":              data.get("queries", []),
+        "brand_id": brand_id,
+        "days": days,
+        "platforms_analyzed": list(results.keys()),
+        "by_platform": results,
+        "note": (
+            "Full gap/mention detail is available for ChatGPT and AI Overview "
+            "(has_gap_data=true). Other platforms show accurate citation frequency "
+            "but not you-vs-rival gap detail. Per-prompt breakdown is omitted here "
+            "for brevity — re-run with a single source to get it."
+        ),
+        "available_followups": followups,
     }
 
 
