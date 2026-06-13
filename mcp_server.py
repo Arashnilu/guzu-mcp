@@ -231,9 +231,9 @@ def ask_guzu(brand_id: int, question: str, days: int = 7) -> dict:
 def prepare_brand(website_url: str, geography: str = "Global", language: str = "en") -> dict:
     """
     STEP 1 of brand setup. Scan a website and build a draft AI-visibility
-    tracking profile for review. This does NOT start any analysis and does NOT
-    charge credits — it only fetches information about the website so the user
-    can review and edit it before committing.
+    tracking profile for review. This does NOT start tracking yet — it fetches
+    information about the website so the user can review and edit the offers,
+    competitors, and prompts before committing.
 
     It returns: the brand profile (name, type, value propositions), priority
     offers, competitors, and a set of tracking prompts (the questions Guzu will
@@ -328,9 +328,8 @@ def start_analyzing(
     produces all the visibility data the other tools read.
 
     You MUST have called prepare_brand first — pass the profile and
-    tracking_questions it returned (optionally edited by the user). This step
-    charges credits based on the number of prompts. It returns a brand_id used
-    by all the reporting tools.
+    tracking_questions it returned (optionally edited by the user). It returns a
+    brand_id used by all the reporting tools.
 
     After calling this, tell the user analysis is running (it takes ~10-12
     minutes) and that they can check progress with
