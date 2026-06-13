@@ -256,6 +256,12 @@ def prepare_brand(website_url: str, geography: str = "Global", language: str = "
     4. Once confirmed — call start_analyzing with the final (possibly edited)
        profile and tracking_questions.
 
+    BEFORE calling this tool: if the user has not EXPLICITLY stated the target
+    geography and language, you MUST ask them first. Do NOT infer or guess
+    geography or language from the URL, domain name, currency, or page path.
+    Ask the user "What target geography and language should I track this brand
+    for?" and wait for their answer before calling this tool.   
+
     Args:
         website_url: Full URL of the website (e.g. "https://example.com")
         geography:   Target geography (e.g. "Global", "United States", "Singapore")
