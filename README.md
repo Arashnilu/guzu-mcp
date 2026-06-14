@@ -23,8 +23,8 @@ Create a free developer account at **[guzu.ai/mcp](https://guzu.ai/mcp)** and co
 
 **Claude Code**
 ```bash
-claude mcp add --transport sse guzu \
-  https://guzu-mcp-production.up.railway.app/sse \
+claude mcp add --transport http guzu \
+  https://guzu-mcp-production.up.railway.app/mcp \
   --header "X-Guzu-Api-Key: gzu_YOUR_KEY"
 ```
 
@@ -33,7 +33,7 @@ claude mcp add --transport sse guzu \
 {
   "mcpServers": {
     "guzu": {
-      "url": "https://guzu-mcp-production.up.railway.app/sse",
+      "url": "https://guzu-mcp-production.up.railway.app/mcp",
       "headers": {
         "X-Guzu-Api-Key": "gzu_YOUR_KEY"
       }
@@ -43,7 +43,7 @@ claude mcp add --transport sse guzu \
 ```
 
 ### 3. Restart your client
-Your assistant will now have the Guzu tools available. Try: *"Analyze ringgitplus.com for AI visibility."*
+Your assistant will now have the Guzu tools available. Try: *"Analyze example.com for AI visibility."*
 
 ---
 
