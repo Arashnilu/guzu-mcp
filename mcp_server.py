@@ -15,7 +15,7 @@ mcp = FastMCP(
     transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False)
 )
 
-app = mcp.sse_app()
+app = mcp.streamable_http_app()
 
 # ── Middleware to extract API key from headers ────────────────────────────────
 
@@ -38,7 +38,8 @@ class ApiKeyMiddleware:
                 api_key = custom
 
             path = scope.get("path", "")
-            if path == "/sse" and not api_key:
+            # Require a key for MCP traffic, but allow health/root probes through.
+            if not api_key and path not in ("/", "/health"):
                 response = JSONResponse(
                     {"error": "API key required. Pass X-Guzu-Api-Key header."},
                     status_code=401
@@ -260,7 +261,7 @@ def prepare_brand(website_url: str, geography: str = "Global", language: str = "
     geography and language, you MUST ask them first. Do NOT infer or guess
     geography or language from the URL, domain name, currency, or page path.
     Ask the user "What target geography and language should I track this brand
-    for?" and wait for their answer before calling this tool.   
+    for?" and wait for their answer before calling this tool.
 
     Args:
         website_url: Full URL of the website (e.g. "https://example.com")
